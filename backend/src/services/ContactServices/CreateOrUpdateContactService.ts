@@ -17,6 +17,7 @@ interface Request {
   extraInfo?: ExtraInfo[];
   whatsappId?: number;
   disableBot?: boolean;
+  lid?: string;
 }
 
 const CreateOrUpdateContactService = async ({
@@ -28,19 +29,46 @@ const CreateOrUpdateContactService = async ({
   companyId,
   extraInfo = [],
   whatsappId,
-  disableBot = false
+  disableBot = false,
+  lid
 }: Request): Promise<Contact> => {
   const number = isGroup ? rawNumber : rawNumber.replace(/[^0-9]/g, "");
+  console.log(`Procurando ou criando contato: ${number} (LID: ${lid || "N/A"}) na empresa ${companyId}`);
 
   const io = getIO();
   let contact: Contact | null;
 
-  contact = await Contact.findOne({
-    where: {
-      number,
-      companyId
+  if (isGroup) {
+    lid = null; // Grupos não usam LID
+  }
+
+  // Se temos um LID, primeiro tentamos encontrar o contato pela coluna lid
+  if (lid && !isGroup) {
+    contact = await Contact.findOne({
+      where: {
+        lid,
+        companyId
+      }
+    });
+    
+    if (contact) {
+      console.log(`Contato encontrado pelo LID: ${lid}`);
     }
-  });
+  }
+
+  // Se não encontrou pelo LID ou não temos LID, tenta pelo number
+  if (!contact) {
+    contact = await Contact.findOne({
+      where: {
+        number,
+        companyId
+      }
+    });
+    
+    if (contact) {
+      console.log(`Contato encontrado pelo number: ${number}`);
+    }
+  }
 
   if (contact) {
     contact.update({ profilePicUrl });
@@ -49,6 +77,10 @@ const CreateOrUpdateContactService = async ({
       contact.update({
         whatsappId
       });
+    }
+    // Atualizar LID se fornecido
+    if (lid) {
+      contact.update({ lid });
     }
     io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-contact`, {
       action: "update",
@@ -64,7 +96,8 @@ const CreateOrUpdateContactService = async ({
       extraInfo,
       companyId,
       whatsappId,
-      disableBot
+      disableBot,
+      lid
     });
 
     io.to(`company-${companyId}-mainchannel`).emit(`company-${companyId}-contact`, {

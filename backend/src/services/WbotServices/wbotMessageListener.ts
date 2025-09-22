@@ -4,7 +4,7 @@ import { head, isNil } from "lodash";
 import path, { join } from "path";
 import { promisify } from "util";
 
-import { map_msg } from "../../utils/global";
+import { getJidFromMessage, getLidFromMessage, map_msg } from "../../utils/global";
 
 import {
   downloadMediaMessage,
@@ -79,6 +79,7 @@ const fs = require('fs')
 type Session = WASocket & {
   id?: number;
   store?: Store;
+  lidMappingStore?: any; // LIDMappingStore da v7.0.0-rc.2
 };
 
 interface SessionOpenAi extends OpenAIApi {
@@ -95,6 +96,8 @@ interface ImessageUpsert {
 interface IMe {
   name: string;
   id: string;
+  lid?: string;
+  // originalJid?: string;
 }
 
 interface IMessage {
@@ -111,40 +114,6 @@ const writeFileAsync = promisify(writeFile);
 const wbotMutex = new Mutex();
 
 const groupContactCache = new SimpleObjectCache(1000 * 30, logger);
-
-// Função para normalizar e unificar JID/LID
-const normalizeContactIdentifier = (message: WAMessage): string => {
-  const { key } = message;
-  const { remoteJid, senderPn, senderLid, participant, participantPn, participantLid } = key;
-  
-  // Prioridade: JID > LID > PN
-  if (remoteJid && remoteJid.includes('@s.whatsapp.net')) {
-    return remoteJid;
-  }
-  if (senderPn && senderPn.includes('@s.whatsapp.net')) {
-    return senderPn;
-  }
-  if (participant && participant.includes('@s.whatsapp.net')) {
-    return participant;
-  }
-
-  if (participantPn && participantPn.includes('@s.whatsapp.net')) {
-    return participantPn;
-  }
-
-  if (participantLid && participantLid.includes('@s.whatsapp.net')) {
-    return participantLid;
-  }
-  
-  if (senderLid && senderLid.includes('@s.whatsapp.net')) {
-    return senderLid;
-  }
-  
-  
-  
-  
-  return remoteJid || '';
-};
 
 // Função para normalizar JID removendo sufixos
 const normalizeJid = (jid: string): string => {
@@ -530,7 +499,7 @@ export const getQuotedMessage = (msg: proto.IWebMessageInfo): any => {
     msg.message.listResponseMessage?.singleSelectReply?.selectedRowId ||
     msg?.message?.listResponseMessage?.singleSelectReply.selectedRowId ||
     msg.message.listResponseMessage?.contextInfo;
-    msg.message.senderKeyDistributionMessage;
+  msg.message.senderKeyDistributionMessage;
 
   // testar isso
 
@@ -539,7 +508,7 @@ export const getQuotedMessage = (msg: proto.IWebMessageInfo): any => {
 export const getQuotedMessageId = (msg: proto.IWebMessageInfo) => {
   const body = extractMessageContent(msg.message)[
     Object.keys(msg?.message).values().next().value
-  ];
+    ];
   let reaction = msg?.message?.reactionMessage
     ? msg?.message?.reactionMessage?.key?.id
     : "";
@@ -562,32 +531,38 @@ const getSenderMessage = (
   if (msg.key.fromMe) return me.id;
 
   const senderId = msg.participant || msg.key.participant || msg.key.remoteJid || undefined;
+  console.log('senderId:::::', senderId)
 
   return senderId && jidNormalizedUser(senderId);
 };
 
 const getContactMessage = async (msg: WAMessage, wbot: Session) => {
   const isGroup = msg.key.remoteJid.includes("g.us");
-  const rawNumber = msg.key.remoteJid.replace(/\D/g, "");
   
-  // Normalizar o identificador do contato
-  const normalizedId = normalizeContactIdentifier(msg);
-  console.log('normalizedId:::::', normalizedId)
-  console.log('msg.key.remoteJid:::::', msg.key.remoteJid)
-  console.log('msg.key.participant:::::', msg.key.participant)
-  console.log('msg.key.senderPn:::::', msg.key.senderPn)
-  console.log('msg.key.senderLid:::::', msg.key.senderLid)
-  console.log('msg.key.participantPn:::::', msg.key.participantPn)
-  console.log('msg.key.participantLid:::::', msg.key.participantLid)
+  // obtem o jid da mensagem mesmo que venha lid ou pn
+  const jid = await getJidFromMessage(msg, wbot);
+  const lid = await getLidFromMessage(msg, wbot);
+  
+  const rawNumber = jid.replace(/\D/g, "");
+  // console.log('jid:::::', jid)
+  // console.log('lid:::::', lid)
+  // console.log('msg.key.remoteJid:::::', msg.key.remoteJid)
+  // console.log('msg.key.participant:::::', msg.key.participant)
+  // console.log('msg.key.senderPn:::::', msg.key.senderPn)
+  // console.log('msg.key.senderLid:::::', msg.key.senderLid)
+  // console.log('msg.key.participantPn:::::', msg.key.participantPn)
+  // console.log('msg.key.participantLid:::::', msg.key.participantLid)
   
   return isGroup
     ? {
       id: getSenderMessage(msg, wbot),
-      name: msg.pushName
+      name: msg.pushName,
+      lid
     }
     : {
-      id: normalizedId,
-      name: msg.key.fromMe ? rawNumber : msg.pushName
+      id: jid,
+      name: msg.key.fromMe ? rawNumber : msg.pushName,
+      lid
     };
 };
 
@@ -653,17 +628,17 @@ const verifyContact = async (
     profilePicUrl = `${process.env.FRONTEND_URL}/nopicture.png`;
   }
 
-  // Normalizar o número do contato
-  const normalizedNumber = normalizeJid(msgContact.id.replace(/\D/g, ""));
 
   const contactData = {
     name: msgContact?.name || msgContact.id.replace(/\D/g, ""),
-    number: normalizedNumber,
+    number: msgContact.id.split("@")[0],
+    lid: msgContact.lid,
     profilePicUrl,
     isGroup: msgContact.id.includes("g.us"),
     companyId,
     whatsappId: wbot.id
   };
+  console.log('contactData:::::', contactData);
 
   const contact = CreateOrUpdateContactService(contactData);
 
@@ -1318,7 +1293,7 @@ const verifyQueue = async (
     const textMessage = {
       text: formatBody(`\u200e${greetingMessage}\n\n${options}`, contact),
     };
-
+    
     let lastMsg = map_msg.get(contact.number);
     let invalidOption = "Opção inválida, por favor, escolha uma opção válida.\n\n";
 
@@ -1349,7 +1324,7 @@ const verifyQueue = async (
       // Na 3a tentativa, seleciona automaticamente a primeira fila
       const firstQueue = head(queues);
       let chatbot = false;
-
+      
       if (firstQueue?.options) {
         chatbot = firstQueue.options.length > 0;
       }
@@ -1446,8 +1421,8 @@ const verifyQueue = async (
       });
     }
 
-  {/* A DUPLICAÇÃO OCORRIA AQUI!
-
+  {/* A DUPLICAÇÃO OCORRIA AQUI PLW!
+    
     const body = formatBody(`\u200e${choosenQueue.greetingMessage}`, ticket.contact);
     if (choosenQueue.greetingMessage) {
       const sentMessage = await wbot.sendMessage(
@@ -1559,7 +1534,7 @@ export const handleRating = async (
     // Remover esses campos, já que queremos manter a fila
     queueOptionId: null,
     userId: null,
-    status: "closed",
+    status: "closed", 
     // Não removemos queueId, pois a fila deve ser mantida
   });
 
@@ -1778,7 +1753,7 @@ const handleChartbot = async (ticket: Ticket, msg: WAMessage, wbot: Session, don
         ["createdAt", "ASC"],
       ],
     });
-
+	
 	if (queueOptions.length === 0) {
 	const textMessage = {
 	  text: formatBody(`\u200e${currentOption.message}`, ticket.contact),
@@ -1788,7 +1763,7 @@ const handleChartbot = async (ticket: Ticket, msg: WAMessage, wbot: Session, don
 	  `${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
 	  textMessage
 	);
-
+	
 	await verifyMessage(sendMsg, ticket, ticket.contact);
 		        if (currentOption.mediaPath !== null && currentOption.mediaPath !== "")  {
 
@@ -1803,7 +1778,7 @@ const handleChartbot = async (ticket: Ticket, msg: WAMessage, wbot: Session, don
         }
 
 	await verifyMessage(sendMsg, ticket, ticket.contact);
-
+	
 	await ticket.update({
 	  queueOptionId: null,
 	  chatbot: false,
@@ -1904,12 +1879,12 @@ const handleChartbot = async (ticket: Ticket, msg: WAMessage, wbot: Session, don
         );
 
         await verifyMessage(sendMsg, ticket, ticket.contact);
-        if (currentOption.mediaPath !== null && currentOption.mediaPath !== "") {
+		        if (currentOption.mediaPath !== null && currentOption.mediaPath !== "")  {
 
-          const filePath = path.resolve("public", "company" + ticket.companyId, currentOption.mediaPath);
+              const filePath = path.resolve("public", "company" + ticket.companyId, currentOption.mediaPath);
 
 
-          const optionsMsg = await getMessageOptions(currentOption.mediaName, filePath, textMessage.text, ticket.companyId.toString());
+              const optionsMsg = await getMessageOptions(currentOption.mediaName, filePath, textMessage.text, ticket.companyId.toString());
 
           let sentMessage = await wbot.sendMessage(`${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`, { ...optionsMsg });
 
@@ -2026,6 +2001,7 @@ const handleMessage = async (
     }
 
     msgContact = await getContactMessage(msg, wbot);
+    console.log('msgContact:::', msgContact)
 
     if (msgIsGroupBlock?.value === "enabled" && isGroup) return;
 
@@ -2037,15 +2013,18 @@ const handleMessage = async (
           const msgGroupContact = {
             id: groupMetadata.id,
             name: groupMetadata.subject,
+            lid: msgContact.lid,
           }
           result = await verifyContact(msgGroupContact, wbot, companyId);
           groupContactCache.set(msg.key.remoteJid, result);
         }
         return result;
-      });
+      });      
     }
 
     const whatsapp = await ShowWhatsAppService(wbot.id!, companyId);
+    console.log('msgContact2:::', msgContact)
+    console.log('groupContact:::', groupContact)
     const contact = await verifyContact(msgContact, wbot, companyId);
     
     // Log para monitorar normalização
@@ -2076,12 +2055,12 @@ const handleMessage = async (
       },
       order: [["createdAt", "DESC"]],
     });
-
+    
 
     if (unreadMessages === 0 && whatsapp.complationMessage && formatBody(whatsapp.complationMessage, contact).trim().toLowerCase() === lastMessage?.body.trim().toLowerCase()) {
       return;
     }
-
+    
 
     const ticket = await FindOrCreateTicketService(contact, wbot.id!, unreadMessages, companyId, groupContact);
 
@@ -2090,9 +2069,9 @@ const handleMessage = async (
     await provider(ticket, msg, companyId, contact, wbot as WASocket);
 
     //DESABILITADO INTERAÇÕES NOS GRUPOS USANDO O && !isGroup e if (isGroup || contact.disableBot)//
-
-    // voltar para o menu inicial
-
+	
+	// voltar para o menu inicial
+	
     // voltar para o menu inicia
     if (bodyMessage == "#" && !isGroup) {
       await ticket.update({
@@ -2113,7 +2092,7 @@ const handleMessage = async (
 
 
     try {
-      if (!msg.key.fromMe && !contact.isGroup) {
+       if (!msg.key.fromMe && !contact.isGroup) {
         /**
          * Tratamento para avaliação do atendente
          */
@@ -2165,8 +2144,9 @@ const handleMessage = async (
       Sentry.captureException(e);
       console.log(e);
     }
+	
 
-    // Atualiza o ticket se a ultima mensagem foi enviada por mim, para que possa ser finalizado.
+    // Atualiza o ticket se a ultima mensagem foi enviada por mim, para que possa ser finalizado. 
     try {
       await ticket.update({
         fromMe: msg.key.fromMe,
@@ -2181,7 +2161,7 @@ const handleMessage = async (
     } else {
       await verifyMessage(msg, ticket, contact);
     }
-
+	
     if (isGroup || contact.disableBot) {
       return;
     }
@@ -2403,7 +2383,7 @@ const handleMessage = async (
           const startTimeA = moment(schedule.startTimeA, "HH:mm");
           const endTimeA = moment(schedule.endTimeA, "HH:mm");
           const startTimeB = moment(schedule.startTimeB, "HH:mm");
-          const endTimeB = moment(schedule.endTimeB, "HH:mm");
+          const endTimeB = moment(schedule.endTimeB, "HH:mm");		  
 
           if (now.isBefore(startTimeA) || now.isAfter(endTimeA) && (now.isBefore(startTimeB) || now.isAfter(endTimeB))) {
             const body = queue.outOfHoursMessage;
@@ -2621,7 +2601,7 @@ const filterMessages = (msg: WAMessage): boolean => {
 const wbotMessageListener = async (wbot: Session, companyId: number): Promise<void> => {
   try {
     const messageCache = new Set<string>();
-    const CACHE_TIMEOUT = 1000 * 60 * 5;
+    const CACHE_TIMEOUT = 1000 * 60 * 5; 
 
     setInterval(() => {
       messageCache.clear();
@@ -2632,7 +2612,7 @@ const wbotMessageListener = async (wbot: Session, companyId: number): Promise<vo
 
     const processMessageQueue = async () => {
       if (processingQueue || messageQueue.length === 0) return;
-
+      
       processingQueue = true;
       try {
         const messagesToProcess = [...messageQueue];
@@ -2642,7 +2622,7 @@ const wbotMessageListener = async (wbot: Session, companyId: number): Promise<vo
           messagesToProcess.map(async (message) => {
             try {
               const messageId = message.key.id!;
-
+              
               if (messageCache.has(messageId)) return;
               messageCache.add(messageId);
 
@@ -2671,35 +2651,35 @@ const wbotMessageListener = async (wbot: Session, companyId: number): Promise<vo
 
     setInterval(processMessageQueue, 100);
     
-    wbot.ev.on("messages.upsert", async (
-      { messages, type, requestId }: { messages: WAMessage[]; type: MessageUpsertType; requestId?: string }
-    ) => {
-      messages
-        .filter(filterMessages)
-        .map(msg => msg);
-        console.log('messages.upsert:::::', messages)
-
-        const message = messages[0]
-        console.log('key:::::', message.key)
-
-      if (!messages?.length) return;
-
-      messageQueue.push(...messages);
-    });
-
-    // wbot.ev.on("messages.upsert", async (messageUpsert: ImessageUpsert) => {
-    //   const messages = messageUpsert.messages
+    // wbot.ev.on("messages.upsert", async (
+    //   { messages, type, requestId }: { messages: WAMessage[]; type: MessageUpsertType; requestId?: string }
+    // ) => {
+    //   messages
     //     .filter(filterMessages)
     //     .map(msg => msg);
     //     console.log('messages.upsert:::::', messages)
 
-    //     const message = messages[0]
-    //     console.log('key:::::', message.key)
+    //     // const message = messages[0]
+    //     // console.log('key:::::', message.key)
 
     //   if (!messages?.length) return;
 
     //   messageQueue.push(...messages);
     // });
+
+    wbot.ev.on("messages.upsert", async (messageUpsert: ImessageUpsert) => {
+      const messages = messageUpsert.messages
+        .filter(filterMessages)
+        .map(msg => msg);
+        console.log('messages.upsert:::::', messages)
+
+        // const message = messages[0]
+        // console.log('key:::::', message.key)
+
+      if (!messages?.length) return;
+
+      messageQueue.push(...messages);
+    });
 
     wbot.ev.on("messages.update", async (messageUpdate: WAMessageUpdate[]) => {
       if (!messageUpdate?.length) return;
@@ -2711,7 +2691,7 @@ const wbotMessageListener = async (wbot: Session, companyId: number): Promise<vo
           }
 
           if (
-            message.update.messageStubType === 1 &&
+            message.update.messageStubType === 1 && 
             message.key.remoteJid !== 'status@broadcast'
           ) {
             await MarkDeleteWhatsAppMessage(
@@ -2735,7 +2715,7 @@ const wbotMessageListener = async (wbot: Session, companyId: number): Promise<vo
   } catch (error) {
     Sentry.captureException(error);
     logger.error(`Error handling wbot message listener. Err: ${error}`);
-
+    
     setTimeout(() => {
       wbotMessageListener(wbot, companyId)
         .catch(err => logger.error(`Error reconnecting wbot: ${err}`));

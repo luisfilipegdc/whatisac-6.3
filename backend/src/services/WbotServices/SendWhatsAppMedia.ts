@@ -11,6 +11,7 @@ import mime from "mime-types";
 
 import ffmpegPath from "ffmpeg-static";
 import formatBody from "../../helpers/Mustache";
+import { buildContactAddress } from "../../utils/global";
 
 interface Request {
   media: Express.Multer.File;
@@ -19,6 +20,7 @@ interface Request {
   body?: string;
   isForwarded?: boolean;  
 }
+
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
@@ -209,7 +211,7 @@ const SendWhatsAppMedia = async ({
     }
 
     const sentMessage = await wbot.sendMessage(
-      `${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
+      buildContactAddress(ticket.contact, ticket.isGroup),
       {
         ...options
       }

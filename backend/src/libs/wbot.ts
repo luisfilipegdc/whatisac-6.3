@@ -9,7 +9,9 @@ import makeWASocket, {
   isJidBroadcast,
   WAMessageKey,
   jidNormalizedUser,
-  CacheStore
+  CacheStore,
+  fetchLatestWaWebVersion,
+  GroupMetadata
 } from "baileys";
 import { Op } from "sequelize";
 import { FindOptions } from "sequelize/types";
@@ -26,6 +28,7 @@ import DeleteBaileysService from "../services/BaileysServices/DeleteBaileysServi
 import NodeCache from 'node-cache';
 import Contact from "../models/Contact";
 import Ticket from "../models/Ticket";
+import { LIDMappingStore } from "baileys/lib/Signal/lid-mapping";
 const loggerBaileys = MAIN_LOGGER.child({});
 loggerBaileys.level = "error";
 
@@ -153,7 +156,8 @@ export const initWASocket = async (whatsapp: Whatsapp): Promise<Session> => {
 
         const { id, name, provider } = whatsappUpdate;
 
-        const { version, isLatest } = await fetchLatestBaileysVersion();
+        const { version, isLatest } = await fetchLatestWaWebVersion({});
+        // const { version, isLatest } = await fetchLatestBaileysVersion();
         const isLegacy = provider === "stable" ? true : false;
 
         logger.info(`using WA v${version.join(".")}, isLatest: ${isLatest}`);
@@ -161,7 +165,9 @@ export const initWASocket = async (whatsapp: Whatsapp): Promise<Session> => {
         logger.info(`Starting session ${name}`);
         let retriesQrCode = 0;
 
-        let wsocket: Session = null;
+        let wsocket: Session & {
+          lidMappingStore?: LIDMappingStore;
+        } = null;
         
         // Removido makeInMemoryStore que não existe mais na versão 6.7.16
         // Usando apenas caches externos conforme exemplo oficial
@@ -169,13 +175,51 @@ export const initWASocket = async (whatsapp: Whatsapp): Promise<Session> => {
         const { state, saveState } = await authState(whatsapp);
 
         const userDevicesCache: CacheStore = new NodeCache();
+        const signalKeyStore = makeCacheableSignalKeyStore(state.keys, logger, userDevicesCache);
+
+        const groupCache = new NodeCache({
+          stdTTL: 3600,
+          maxKeys: 10000,
+          checkperiod: 600,
+          useClones: false
+        })
+
+         const lidMappingStore = new LIDMappingStore(
+          signalKeyStore as any, // Cast temporário para compatibilidade
+          async (...jids: string[]) => {
+            // Função para verificar JIDs no WhatsApp e obter LIDs
+            try {
+              const results = await wsocket?.onWhatsApp(...jids);
+              return results?.map(result => ({
+                jid: result.jid,
+                exists: result.exists,
+                lid: result.lid || result.jid
+              }));
+            } catch (error) {
+              logger.error("Erro ao verificar JIDs no WhatsApp:", error);
+              return undefined;
+            }
+          }
+        );
+
+        const cachedGroupMetadata = async (jid: string):  Promise<GroupMetadata> => {
+            let data:GroupMetadata = groupCache.get(jid);
+            console.log('cachedGroupMetadata jid:', jid, 'data:', !!data);
+            if (data) {
+              return data;
+            } else {
+              const result = await wsocket.groupMetadata(jid);
+              groupCache.set(jid, result);
+              return result;
+            }
+        };
 
         wsocket = makeWASocket({
           logger: loggerBaileys,
           printQRInTerminal: false,
           auth: {
             creds: state.creds,
-            keys: makeCacheableSignalKeyStore(state.keys, logger),
+            keys: signalKeyStore,
           },
           version,
           browser: Browsers.appropriate("Desktop"),
@@ -189,7 +233,65 @@ export const initWASocket = async (whatsapp: Whatsapp): Promise<Session> => {
           fireInitQueries: true,
           transactionOpts: { maxCommitRetries: 10, delayBetweenTriesMs: 3000 },
           shouldIgnoreJid: jid => isJidBroadcast(jid),
+          cachedGroupMetadata,
         });
+
+
+        
+
+        // PATCH ESPECÍFICO - Converter objetos Object() para Buffer
+        const originalBufferFrom = Buffer.from;
+        Buffer.from = function(value: any, ...args: any[]) {
+          try {
+            // Interceptar APENAS objetos Object() que não são válidos para Buffer.from
+            if (typeof value === 'object' && value !== null && 
+                !Array.isArray(value) && 
+                !Buffer.isBuffer(value) && 
+                !(value instanceof Uint8Array) &&  // NÃO interceptar Uint8Array
+                !(value instanceof ArrayBuffer) &&  // NÃO interceptar ArrayBuffer
+                value.constructor === Object) {     // APENAS objetos Object()
+              
+              // console.log(`🚨 INTERCEPTADO Buffer.from com objeto Object() inválido:`, {
+              //   type: typeof value,
+              //   constructor: value.constructor?.name,
+              //   keys: Object.keys(value),
+              //   value: value
+              // });
+              
+              // Tentar converter o objeto Object() para array e depois para Buffer
+              try {
+                const keys = Object.keys(value);
+                const isNumericKeys = keys.every(key => /^\d+$/.test(key));
+                
+                if (isNumericKeys) {
+                  // Converter objeto com chaves numéricas para array
+                  const maxIndex = Math.max(...keys.map(k => parseInt(k)));
+                  const array = new Array(maxIndex + 1);
+                  
+                  for (let i = 0; i <= maxIndex; i++) {
+                    array[i] = value[i] || 0;
+                  }
+                  
+                  const buffer = Buffer.from(array);
+                  console.log(`✅ Convertido objeto Object() para Buffer (${buffer.length} bytes)`);
+                  return buffer;
+                } else {
+                  console.log(`⚠️ Objeto Object() não tem chaves numéricas, retornando Buffer vazio`);
+                  return Buffer.from([]);
+                }
+              } catch (conversionError) {
+                console.error(`❌ Erro ao converter objeto Object() para Buffer:`, conversionError);
+                return Buffer.from([]);
+              }
+            }
+            
+            return originalBufferFrom.call(this, value, ...args);
+          } catch (error) {
+            console.error(`❌ Erro no Buffer.from interceptado:`, error);
+            // Retornar Buffer vazio como fallback
+            return Buffer.from([]);
+          }
+        };
 
         wsocket.ev.on(
           "connection.update",
@@ -385,6 +487,8 @@ export const initWASocket = async (whatsapp: Whatsapp): Promise<Session> => {
             }
           }
         );
+
+         wsocket.lidMappingStore = lidMappingStore;
 
         // Removida a linha que vinculava o store ao socket
         // store.bind(wsocket.ev);

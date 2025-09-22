@@ -24,7 +24,7 @@ import EditIcon from "@material-ui/icons/Edit";
 import api from "../../services/api";
 import TableRowSkeleton from "../../components/TableRowSkeleton";
 import ContactModal from "../../components/ContactModal";
-import ConfirmationModal from "../../components/ConfirmationModal";
+import ConfirmationModal from "../../components/ConfirmationModal/";
 import CancelIcon from "@material-ui/icons/Cancel";
 import { i18n } from "../../translate/i18n";
 import MainHeader from "../../components/MainHeader";

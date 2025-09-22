@@ -12,12 +12,13 @@ import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import FindOrCreateATicketTrakingService from "./FindOrCreateATicketTrakingService";
 import GetTicketWbot from "../../helpers/GetTicketWbot";
 import { verifyMessage } from "../WbotServices/wbotMessageListener";
-import ListSettingsServiceOne from "../SettingServices/ListSettingsServiceOne"; //NOVO//
-import ShowUserService from "../UserServices/ShowUserService"; //NOVO//
+import ListSettingsServiceOne from "../SettingServices/ListSettingsServiceOne"; //NOVO PLW DESIGN//
+import ShowUserService from "../UserServices/ShowUserService"; //NOVO PLW DESIGN//
 import { isNil } from "lodash";
 import Whatsapp from "../../models/Whatsapp";
 import { Op } from "sequelize";
 import AppError from "../../errors/AppError";
+import { buildContactAddress } from "../../utils/global";
 
 
 interface TicketData {
@@ -192,7 +193,7 @@ const UpdateTicketService = async ({
         const msgtxt = "*Mensagem automática*:\nVocê foi transferido para o departamento *" + queue?.name + "*\naguarde, já vamos te atender!";
 
         const queueChangedMessage = await wbot.sendMessage(
-          `${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
+          buildContactAddress(ticket.contact, ticket.isGroup),
           {
             text: msgtxt
           }
@@ -207,7 +208,7 @@ const UpdateTicketService = async ({
           const msgtxt = "*Mensagem automática*:\nFoi transferido para o atendente *" + nome.name + "*\naguarde, já vamos te atender!";
 
           const queueChangedMessage = await wbot.sendMessage(
-            `${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
+            buildContactAddress(ticket.contact, ticket.isGroup),
             {
               text: msgtxt
             }
@@ -223,7 +224,7 @@ const UpdateTicketService = async ({
             const msgtxt = "*Mensagem automática*:\nVocê foi transferido para o departamento *" + queue?.name + "* e contará com a presença de *" + nome.name + "*\naguarde, já vamos te atender!";
 
             const queueChangedMessage = await wbot.sendMessage(
-              `${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
+              buildContactAddress(ticket.contact, ticket.isGroup),
               {
                 text: msgtxt
               }
@@ -237,7 +238,7 @@ const UpdateTicketService = async ({
               const msgtxt = "*Mensagem automática*:\nVocê foi transferido para o departamento *" + queue?.name + "*\naguarde, já vamos te atender!";
 
               const queueChangedMessage = await wbot.sendMessage(
-                `${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"}`,
+                buildContactAddress(ticket.contact, ticket.isGroup),
                 {
                   text: msgtxt
                 }

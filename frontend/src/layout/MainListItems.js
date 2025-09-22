@@ -161,7 +161,7 @@ const useStyles = makeStyles((theme) => ({
     fontWeight: 500,
   },
   menuWrapper: {
-    width: collapsed => collapsed ? 72 : 280,
+    width: collapsed => collapsed ? 40 : 280,
     transition: 'width 0.3s ease',
     overflow: 'hidden',
   },

@@ -8,7 +8,7 @@ import { logger } from "../../utils/logger";
 import formatBody from "../../helpers/Mustache";
 
 import Queue from "bull";
-import { map_msg } from "../../utils/global";
+import { map_msg, buildContactAddress } from "../../utils/global";
 
 interface Request {
   body: string;
@@ -25,8 +25,8 @@ const SendWhatsAppMessage = async ({
 }: Request): Promise<WAMessage> => {
   let options = {};
   const wbot = await GetTicketWbot(ticket);
-  const number = `${ticket.contact.number}@${ticket.isGroup ? "g.us" : "s.whatsapp.net"
-    }`;
+  console.log('ticket.contact', ticket.contact);
+  const number = buildContactAddress(ticket.contact, ticket.isGroup);
   console.log("number", number);
   if (quotedMsg) {
     const chatMessages = await Message.findOne({
