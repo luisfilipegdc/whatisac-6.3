@@ -128,8 +128,7 @@ const useStyles = makeStyles((theme) => ({
       backgroundColor: green[500],
       color: "white",
     },
-  },
-  tagContainer: {
+  },  tagContainer: {
     display: "flex",
     alignItems: "center",
     flexWrap: "wrap",
@@ -224,8 +223,7 @@ const useStyles = makeStyles((theme) => ({
     "&:hover": {
       opacity: 0.8,
     },
-  },
-  chatbotIcon: {
+  },  chatbotIcon: {
     fontSize: "16px",
     marginLeft: "4px",
     color: grey[600],
@@ -393,53 +391,6 @@ const TicketListItemCustom = ({ ticket }) => {
     }
   };
 
-  const handleTransferTicket = () => {
-    setTransferTicketModalOpen(true);
-  };
-
-  const handleCloseTransferModal = () => {
-    setTransferTicketModalOpen(false);
-  };
-
-  const handleAcceptTicket = async (id) => {
-    setLoading(true);
-    try {
-        await api.put(`/tickets/${id}`, {
-            status: "open",
-            userId: user?.id,
-        });
-        
-        let settingIndex;
-
-        try {
-            const { data } = await api.get("/settings/");
-            
-            settingIndex = data.filter((s) => s.key === "sendGreetingAccepted");
-            
-        } catch (err) {
-            toastError(err);
-               
-        }
-        
-        if (settingIndex[0].value === "enabled" && !ticket.isGroup) {
-            handleSendMessage(ticket.id);
-            
-        }
-
-    } catch (err) {
-        setLoading(false);
-        
-        toastError(err);
-    }
-    if (isMounted.current) {
-        setLoading(false);
-    }
-
-    // handleChangeTab(null, "tickets");
-    // handleChangeTab(null, "open");
-    history.push(`/tickets/${ticket.uuid}`);
-};
-
   const handleSendMessage = async (id) => {
         
     const msg = `{{ms}} *{{name}}*, meu nome é *${user?.name}* e agora vou prosseguir com seu atendimento!`;
@@ -456,6 +407,29 @@ const TicketListItemCustom = ({ ticket }) => {
         
     }
 };
+
+  const handleAcceptTicket = async (id) => {
+    setLoading(true);
+    try {
+      await api.put(`/tickets/${id}`, {
+        status: "open",
+        userId: user?.id,
+      });
+      history.push(`/tickets/${ticket.uuid}`);
+    } catch (err) {
+      toastError(err);
+    } finally {
+      if (isMounted.current) setLoading(false);
+    }
+  };
+
+  const handleTransferTicket = () => {
+    setTransferTicketModalOpen(true);
+  };
+
+  const handleCloseTransferModal = () => {
+    setTransferTicketModalOpen(false);
+  };
 
   const handleSelectTicket = () => {
     if (ticket.status === "pending") return;

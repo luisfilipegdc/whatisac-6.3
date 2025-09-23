@@ -8,6 +8,10 @@ import { logger } from '../../utils/logger';
 
 const contactsUpdateQueue = new Bull('contactsUpdateQueue', {
   redis: REDIS_URI_CONNECTION,
+  //redis: {
+    //host: 'localhost',
+    //port: 6379,
+  //},
   defaultJobOptions: {
     attempts: configLoader().webhook.attempts, // Número de tentativas em caso de falha
     backoff: {

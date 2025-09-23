@@ -53,6 +53,7 @@ class Message extends Model<Message> {
     if (this.getDataValue("mediaUrl")) {
       // return `${process.env.BACKEND_URL}/public/${this.getDataValue("mediaUrl")}`;
 
+     
       return `${process.env.BACKEND_URL}/public/company${this.companyId}/${this.getDataValue("mediaUrl")}`;
 
     }

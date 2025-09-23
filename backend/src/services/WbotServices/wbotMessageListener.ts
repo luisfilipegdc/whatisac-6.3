@@ -1421,7 +1421,7 @@ const verifyQueue = async (
       });
     }
 
-  {/* A DUPLICAÇÃO OCORRIA AQUI PLW!
+  {/* A DUPLICAÇÃO OCORRIA AQUI!
     
     const body = formatBody(`\u200e${choosenQueue.greetingMessage}`, ticket.contact);
     if (choosenQueue.greetingMessage) {

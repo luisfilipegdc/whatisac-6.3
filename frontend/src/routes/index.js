@@ -102,9 +102,9 @@ const Routes = () => {
                 <Route exact path="/users" component={Users} isPrivate />
                 <Route exact path="/files" component={Files} isPrivate />
                 <Route exact path="/prompts" component={Prompts} isPrivate />
-                <Route exact path="/LogLauncher" component={LogLauncher} isPrivate />
+				<Route exact path="/LogLauncher" component={LogLauncher} isPrivate />
                 <Route exact path="/queue-integration" component={QueueIntegration} isPrivate />
-                {/*<Route exact path="/kanban-schedules" component={kanbanSchedules} isPrivate />*/}
+					{/*<Route exact path="/kanban-schedules" component={kanbanSchedules} isPrivate />*/}
                 <Route
                   exact
                   path="/messages-api"

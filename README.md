@@ -1,4 +1,3 @@
-
 # **WhaTicket SaaS**
 
 Plataforma de atendimento **Whaticket Gold** com módulo Kanban, modo noturno e integrações avançadas. Distribuído por Launcher & Co.
@@ -99,53 +98,7 @@ Você pode adquirir os planos através dos links:
   * Indicação "Digitando" ou "Gravando" no canto inferior direito do ticket.
   * API atualizada.
   * Novo layout da página de login.
-
-### **🔧 Como Corrigir a Versão do WhatsApp**
-
-Quando o WhatsApp parar de funcionar, siga os passos abaixo para atualizar a versão da biblioteca **Baileys**.
-
-#### **Pré-requisitos:**
-
-  * Acesse a pasta `/backend` no seu terminal.
-  * O arquivo `fixversion.js` deve existir em `backend`.
-  * O arquivo `wbot.ts` deve existir em `backend/src/libs/wbot.ts`.
-
-#### **1. Comando Recomendado**
-
-Para aplicar a versão mais recente e estável, utilize o comando:
-
-```bash
-node fix-version.js latest
-```
-
-#### **2. Executando o Fix Manualmente**
-
-Se precisar de mais controle, siga estes passos:
-
-1.  **Verifique a versão atual:**
-
-    ```bash
-    node fix-version.js --current
-    ```
-
-2.  **Encontre uma versão funcional:**
-
-      * Acesse [wppconnect.io/pt-BR/whatsapp-versions/](https://wppconnect.io/pt-BR/whatsapp-versions/)
-      * Escolha uma versão **estável**. A versão mais recente é a recomendada. Por exemplo: `2.3000.1027400486-alpha`.
-
-3.  **Aplique a nova versão:**
-
-      ```bash
-    node fix-version.js 2 3000 1027400486
-    ```
-      
-      * Extraia os números `Major` (`2`), `Minor` (`3000`) e `Patch` (`1027400486`).
-      * Execute o comando com os números extraídos.
-
-5.  **Reinicie o servidor:**
-
-      * Reinicie o servidor Whaticket para que as mudanças sejam aplicadas.
-  
+ 
 ### **📚 Documentação e Suporte**
 
   * **Suporte:** Suporte técnico está disponível apenas para compradores. Ao realizar a compra, entre em contato via WhatsApp para liberação de acesso.

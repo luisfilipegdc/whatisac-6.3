@@ -6,6 +6,11 @@ import configLoader from '../ConfigLoaderService/configLoaderService';
 
 const msgAckQueue = new Bull('msgAckQueue', {
   redis: REDIS_URI_CONNECTION,
+  // redis: {
+    // host: 'localhost',
+    // port: 6379,
+    // maxRetriesPerRequest: null
+  // },
   defaultJobOptions: {
     attempts: configLoader().webhook.attempts,
     backoff: {
